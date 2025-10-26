@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: agentic-rag-postgres
+    environment:
+      POSTGRES_DB: agentic_rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agentic-rag-network
+
+  # Agentic RAG Service
+  agentic-rag:
+    build: .
+    container_name: agentic-rag-service
+    ports:
+      - "8001:8001"
+    environment:
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: agentic_rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+
+      # AWS Credentials (set these in .env file)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+
+      # Embeddings
+      EMBEDDINGS_PROVIDER: bedrock
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-amazon.titan-embed-text-v1}
+
+      # LLM
+      LLM_PROVIDER: bedrock
+      LLM_MODEL: ${LLM_MODEL:-anthropic.claude-3-5-sonnet-20241022-v2:0}
+
+      # Other settings
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEBUG: ${DEBUG:-false}
+
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - agentic-rag-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  agentic-rag-network:
+    driver: bridge
